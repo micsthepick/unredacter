@@ -62,12 +62,13 @@ async function gatherResults(guess: string, totalScore: number, score: number, i
 
   labelElement = <HTMLInputElement>document.getElementById("attempts_per_second");
   var now = new Date().getTime();
+  var timeDiff = Infinity;
   if (lastTime) {
-    var timeDiff = (now - lastTime);
+    timeDiff = (now - lastTime);
     iterations += 1;
     totalTime += timeDiff;
   }
-  labelElement.value = (totalTime !== 0 ? 1000 * iterations / totalTime : 0).toString();
+  labelElement.value = `Avg: ${(totalTime !== 0 ? 1000 * iterations / totalTime : 0).toFixed(2)} Current: ${(1000 / timeDiff).toFixed(2)}`;
   lastTime = now;
 
 }
