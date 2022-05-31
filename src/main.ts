@@ -1,9 +1,10 @@
-import { app, BrowserWindow, remote } from "electron";
+import { app, BrowserWindow } from "electron";
 import * as path from "path";
 import { ipcMain } from 'electron';
 import Jimp from 'jimp';
 
 app.commandLine.appendArgument("--disable-renderer-backgrounding​");
+app.allowRendererProcessReuse = true;
 
 // Hardcoded constants
 const blockSize_w = 18;
@@ -66,6 +67,10 @@ function createWindow() {
       nativeWindowOpen: false,
       safeDialogs: true,
   }});
+
+  mainWindow.on('close', () => {
+    win.close();
+  });
 }
 
 // This method will be called when Electron has finished
@@ -428,7 +433,7 @@ async function redact(message: any) {
               offset_y: offset_y,
               tooBig: redacted_image.bitmap.width < scaled_guess_image.bitmap.width,
             };
-
+    
   });
   await result;
   return result;
