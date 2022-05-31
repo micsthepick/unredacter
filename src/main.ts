@@ -3,6 +3,8 @@ import * as path from "path";
 import { ipcMain } from 'electron';
 import Jimp from 'jimp';
 
+app.commandLine.appendArgument("--disable-renderer-backgrounding​");
+
 // Hardcoded constants
 const blockSize_w = 18;
 const blockSize_h = 20;

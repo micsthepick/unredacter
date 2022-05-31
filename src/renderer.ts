@@ -7,6 +7,7 @@
 
 var best_guess = "";
 var best_score = 1;
+var lastTime = new Date().getTime();
 
 window.addEventListener("message", (event) => {
   if (event.data.command === "offsetDiscovery") {
@@ -22,6 +23,7 @@ window.addEventListener("message", (event) => {
   }
 
   if (event.data.command === "guess-text") {
+    // get the time since this command was last called:
     gatherResults(event.data.guess, event.data.totalScore, event.data.score, event.data.imageData, event.data.offset_x, event.data.offset_y);
   }
 
@@ -34,7 +36,7 @@ window.addEventListener("message", (event) => {
 });
 
 async function gatherResults(guess: string, totalScore: number, score: number, imageData: string, offset_x: number, offset_y: number) {
-
+  
   if (totalScore < best_score) {
     best_score = totalScore;
     best_guess = guess;
@@ -55,6 +57,12 @@ async function gatherResults(guess: string, totalScore: number, score: number, i
   if (imageData) imageElement.src = imageData;
   var labelElement = <HTMLInputElement>document.getElementById("current-guess");
   labelElement.value = guess;
+
+  labelElement = <HTMLInputElement>document.getElementById("attempts_per_second");
+  var now = new Date().getTime();
+  labelElement.value = (1000 / (now - lastTime)).toString();
+  lastTime = now;
+
 }
 
 document.getElementById('start-button').addEventListener('click', () => {
