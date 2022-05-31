@@ -7,7 +7,7 @@ import * as path from "path";
 // Some hardcoded constants here.
 const guessable_characters = '0123456789';//abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const max_length = 8;
-const blockSize_w = 32;
+const blockSize_w = 18;
 const blockSize_h = 29;
 const threshold = 0.4;
 const skipX = 10;

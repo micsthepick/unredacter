@@ -1,10 +1,9 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, contentTracing } from "electron";
 import * as path from "path";
 import { ipcMain } from 'electron';
 import Jimp from 'jimp';
 
 app.commandLine.appendArgument("--disable-renderer-backgrounding​");
-app.allowRendererProcessReuse = true;
 
 // Hardcoded constants
 const blockSize_w = 18;
@@ -23,7 +22,6 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       nodeIntegration: false,
-      worldSafeExecuteJavaScript: true,
       contextIsolation: true,
     },
     width: 1400,
@@ -59,12 +57,11 @@ function createWindow() {
       webSecurity: true,
       contextIsolation: true,
       webviewTag: false,
-      enableRemoteModule: false,
+      offscreen: true,
       allowRunningInsecureContent: false,
       nodeIntegration: false,
       nodeIntegrationInWorker: false,
       nodeIntegrationInSubFrames: false,
-      nativeWindowOpen: false,
       safeDialogs: true,
   }});
 
