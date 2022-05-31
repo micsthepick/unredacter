@@ -40,7 +40,7 @@ async function gatherResults(guess: string, totalScore: number, score: number, i
     best_guess = guess;
 
     var imageElement = <HTMLImageElement>document.getElementById("best-preview-image");
-    imageElement.src = imageData;
+    if (imageData) imageElement.src = imageData;
 
     var labelElement = <HTMLInputElement>document.getElementById("best-guess");
     labelElement.value = guess;
@@ -52,7 +52,7 @@ async function gatherResults(guess: string, totalScore: number, score: number, i
     labelElement.value = offset_y.toString();
   }
   var imageElement = <HTMLImageElement>document.getElementById("current-preview-image");
-  imageElement.src = imageData;
+  if (imageData) imageElement.src = imageData;
   var labelElement = <HTMLInputElement>document.getElementById("current-guess");
   labelElement.value = guess;
 }

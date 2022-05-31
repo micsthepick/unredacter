@@ -1,15 +1,18 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, remote } from "electron";
 import * as path from "path";
 import { ipcMain } from 'electron';
 import Jimp from 'jimp';
 
 // Hardcoded constants
-const blockSize = 8;
+const blockSize_w = 18;
+const blockSize_h = 20;
 
-var mainWindow: any = null
-var redacted_image: any = null
-var blank_background: any = null
+var mainWindow: BrowserWindow = null;
+var redacted_image: Jimp = null;
+var blank_background: Jimp = null;
+var win: BrowserWindow = null;
 
+// when app ready
 function createWindow() {
   // Create the browser window.
   mainWindow = new BrowserWindow({
@@ -20,7 +23,7 @@ function createWindow() {
       worldSafeExecuteJavaScript: true,
       contextIsolation: true,
     },
-    width: 800,
+    width: 1400,
   });
 
   // and load the index.html of the app.
@@ -36,10 +39,31 @@ function createWindow() {
 
   Jimp.read(path.join(__dirname, "../secret.png")).then(gimp_image => {
     redacted_image = gimp_image;
-    blank_background = new Jimp(redacted_image.bitmap.width, redacted_image.bitmap.height, 'white', (err: any, image: any)  => {
+    blank_background = new Jimp(redacted_image.bitmap.width, redacted_image.bitmap.height, 'black', (err: any, image: any)  => {
     if (err) throw err
     })
   });
+
+  win = new BrowserWindow({
+    width: 400,
+    height: 200,
+    show: false,
+
+    webPreferences: {
+      backgroundThrottling: false,
+      devTools: false,
+      sandbox: true,
+      webSecurity: true,
+      contextIsolation: true,
+      webviewTag: false,
+      enableRemoteModule: false,
+      allowRunningInsecureContent: false,
+      nodeIntegration: false,
+      nodeIntegrationInWorker: false,
+      nodeIntegrationInSubFrames: false,
+      nativeWindowOpen: false,
+      safeDialogs: true,
+  }});
 }
 
 // This method will be called when Electron has finished
@@ -79,11 +103,11 @@ async function getBlueMargin(image: any) {
   var found = false;
   // Scan a single row, in the middle so we're sure to hit the blue box
   image.scan(0, image.bitmap.height/2, image.bitmap.width, 1, function(x: number, y: number, idx: number) {
-    const red = image.bitmap.data[(x * 4) + (y * rowsize) + 0];
-    const green = image.bitmap.data[(x * 4) + (y * rowsize) + 1];
-    const blue = image.bitmap.data[(x * 4) + (y * rowsize) + 2];
+    const red = image.bitmap.data[idx + 0];
+    const green = image.bitmap.data[idx + 1];
+    const blue = image.bitmap.data[idx + 2];
 
-    if (found === false && blue === 255 && green !== 255 && red !== 255){
+    if (found === false && blue === 255 && green === 0 && red === 0){
       found = true;
       margin = x;
       return x;
@@ -95,36 +119,36 @@ async function getBlueMargin(image: any) {
   var topBlue = 0;
   var botBlue = 0;
   image.scan(margin + 5, 0, 1, image.bitmap.height, function(x: number, y: number, idx: number) {
-    const red = image.bitmap.data[(x * 4) + (y * rowsize) + 0];
-    const green = image.bitmap.data[(x * 4) + (y * rowsize) + 1];
-    const blue = image.bitmap.data[(x * 4) + (y * rowsize) + 2];
+    const red = image.bitmap.data[idx + 0];
+    const green = image.bitmap.data[idx + 1];
+    const blue = image.bitmap.data[idx + 2];
 
-    if (found === false && blue === 255 && green !== 255 && red !== 255){
+    if (found === false && blue === 255 && green === 0 && red === 0){
       found = true;
       topBlue = y;
     }
-    if (found === true && blue === 255 && green === 255 && red === 255){
+
+    // match background color (black)
+    if (found === true && blue === 0 && green === 0 && red === 0){
       found = false;
       botBlue = y;
     }
   });
 
-  center = (topBlue + botBlue) / 2;
+  center = Math.floor((topBlue + botBlue) / 2);
 
   return [margin, center];
 };
 
 // Given an image, how many blank pixels are there on the right and left of it?
 async function getMargins(image: any) {
-  const rowsize = image.bitmap.width * 4;
-
   // Scan a single row, in the middle
   var hitRed = false;
   var left_edge = 0;
   image.scan(0, image.bitmap.height/2, image.bitmap.width, 1, function(x: number, y: number, idx: number) {
-    const red = image.bitmap.data[(x * 4) + (y * rowsize) + 0];
-    const green = image.bitmap.data[(x * 4) + (y * rowsize) + 1];
-    const blue = image.bitmap.data[(x * 4) + (y * rowsize) + 2];
+    const red = image.bitmap.data[idx + 0];
+    const green = image.bitmap.data[idx + 1];
+    const blue = image.bitmap.data[idx + 2];
 
     // Left edge
     if (hitRed === false && (green !== 255 && red === 255 && blue !== 255)) {
@@ -138,12 +162,11 @@ async function getMargins(image: any) {
 
 // Given a redacted image, what where is the left edge of where the text actually starts?
 async function getLeftEdge(image: any) {
-  const rowsize = image.bitmap.width * 4;
   var left_edge = image.bitmap.width;
   image.scan(0, 0, image.bitmap.width, image.bitmap.height, function(x: number, y: number, idx: number) {
-    const red = image.bitmap.data[(x * 4) + (y * rowsize) + 0];
-    const green = image.bitmap.data[(x * 4) + (y * rowsize) + 1];
-    const blue = image.bitmap.data[(x * 4) + (y * rowsize) + 2];
+    const red = image.bitmap.data[idx + 0];
+    const green = image.bitmap.data[idx + 1];
+    const blue = image.bitmap.data[idx + 2];
     // Left edge
     if (x < left_edge && green !== 255 && red !== 255 && blue !== 255) {
       left_edge = x;
@@ -165,38 +188,21 @@ async function redact(message: any) {
     redacted_image = await Jimp.read(Buffer.from(message.redacted_image.replace(/^data:image\/png;base64,/, ""), 'base64'));
   }
 
-  const win = new BrowserWindow({
-    width: 400,
-    height: 120,
-    show: false,
-    webPreferences: {
-      sandbox: true,
-      webSecurity: true,
-      contextIsolation: true,
-      webviewTag: false,
-      enableRemoteModule: false,
-      allowRunningInsecureContent: false,
-      nodeIntegration: false,
-      nodeIntegrationInWorker: false,
-      nodeIntegrationInSubFrames: false,
-      nativeWindowOpen: false,
-      safeDialogs: true,
-    }
-  })
-
   //TODO Do this less janky
-  var htmlstring = "\
-  data:text/html;charset=utf-8, \
-  <HTML/> \
-  <body style=\"padding: 8px 0px 0px 8px; background-color:white;\"> \
-  <span style=\"padding 0px 0px 0px 0px; font-weight: normal; line-spacing: 0px; word-spacing: 0px; white-space: pre; margin: 0; font-size: 32px; font-family:'Arial'\">XYZXYZ</span><span style=\"padding 0px 0px 0px 0px; margin: 0; color: blue; font-size: 32px; font-family:'Arial'\">█</span> \
-  </body> \
-  </HTML> \
-  "
+  var htmlstring = `data:text/html;charset=utf-8,<html><body style="padding: ${blockSize_h+1}px 0px 0px ${blockSize_w+1}px; background-color:black;"><span style="padding: 0px 0px 0px 0px; font-weight: normal; line-spacing: 0px; word-spacing: 0px; white-space: pre; margin: 0; font-size: 60px; font-family:\'Minecraft\'; color:%23dfdfdf; text-shadow: 6px 6px 0 %23383838">XYZXYZ</span><span style="padding: 0px 0px 0px 1px; margin: 0; color: blue; font-size: 60px;">█</span></body></html>`;
+
+  //console.log(htmlstring);
+
+  var tmpImage: any = null;
   await win.loadURL(htmlstring.replace('XYZXYZ', message.text));
-  const image = await win.capturePage();
-  win.destroy();
-  const imageData = image ? image.toPNG() : Buffer.from('');
+  do {
+    tmpImage = await win.webContents.capturePage();
+  }
+  while (tmpImage.getSize().height === 0);
+  const imageData = tmpImage ? tmpImage.toPNG() : Buffer.from('');
+  if (imageData.length === 0) {
+    console.error('No image data!');
+  }
   const offset_x = message.offset_x;
   const offset_y = message.offset_y;
 
@@ -204,35 +210,43 @@ async function redact(message: any) {
     // Find the blue line that demarks the end of the guess string
     var margins = await getBlueMargin(image)
     var blueMargin = margins[0];
-    var imageCenter = margins[1];
+    //var imageCenter = margins[1];
+
+    //await image.writeAsync(path.join(__dirname, "../test_plaintext.png"));
 
     // Crop the image down according to the given offset.
     image.crop(offset_x, offset_y, blueMargin-offset_x, image.bitmap.height-offset_y);
-    imageCenter -= offset_y; // New center of image
+
+    //console.assert(image.bitmap.width * image.bitmap.height * 4 == image.bitmap.data.length, "Image data length is not correct 1: ", offset_x, offset_y);
+
+    //imageCenter -= offset_y; // New center of image
 
     // Make a 2D array for the new averaged pixels
-    var averagePixels = new Array(Math.ceil(image.bitmap.width / blockSize));
+    var averagePixels = new Array(Math.ceil(image.bitmap.width / blockSize_w));
     for (var i = 0; i < averagePixels.length; i++) {
-      averagePixels[i] = new Array(Math.ceil(image.bitmap.height / blockSize));
-      for (var j = 0; j < image.bitmap.height / blockSize; j++) {
+      averagePixels[i] = new Array(Math.ceil(image.bitmap.height / blockSize_h));
+      for (var j = 0; j < image.bitmap.height / blockSize_h; j++) {
         averagePixels[i][j] = new Array(4).fill(-1);
       }
     }
 
     // Scale up the image so that it's a multiple of blockSize pixels
-    // Expand the redacted image with whitespace because it's too small
-    const remainder = blockSize - (image.bitmap.width % blockSize);
-    if (remainder < blockSize){
-      var blank_canvass = new Jimp(image.bitmap.width + remainder, image.bitmap.height, 'white', (err: any, image: any)  => {
+    // Expand the redacted image with background color (black) because it's too small
+    const remainder_w = (blockSize_w-(image.bitmap.width % blockSize_w));
+    if (remainder_w < blockSize_w){
+      var blank_canvas = new Jimp(image.bitmap.width + remainder_w, image.bitmap.height, 'black', (err: any, image: any)  => {
       if (err) throw err
       })
-      blank_canvass.composite(image, 0, 0, {
+      blank_canvas.composite(image, 0, 0, {
         mode: Jimp.BLEND_SOURCE_OVER,
         opacityDest: 1,
         opacitySource: 1
       })
-      image = blank_canvass;
+      image = blank_canvas;
     }
+
+    //console.assert(image.bitmap.width * image.bitmap.height * 4 == image.bitmap.data.length, "Image data length is not correct 2: ", offset_x, offset_y);
+
 
     // Pixelate the image
     var original = image.clone();
@@ -240,12 +254,12 @@ async function redact(message: any) {
       // x, y is the position of this pixel on the image
       // idx is the position start position of this rgba tuple in the bitmap Buffer
       // this is the image
-      var upper_left_x = ~~(x / blockSize) * blockSize;
-      var upper_left_y = ~~(y / blockSize) * blockSize;
+      var upper_left_x = ~~(x / blockSize_w) * blockSize_w;
+      var upper_left_y = ~~(y / blockSize_h) * blockSize_h;
       const rowsize = original.bitmap.width * 4;
 
-      const conv_x = upper_left_x/blockSize;
-      const conv_y = upper_left_y/blockSize;
+      const conv_x = upper_left_x/blockSize_w;
+      const conv_y = upper_left_y/blockSize_h;
 
       // Only do this calculation if we haven't already
       if (averagePixels[conv_x][conv_y][0] === -1)
@@ -256,8 +270,8 @@ async function redact(message: any) {
         var blue = 0;
         var alpha = 0;
         var pixelCount = 0;
-        for (var i = 0; i < blockSize; i ++) {
-          for (var j = 0; j < blockSize; j ++) {
+        for (var i = 0; i < blockSize_w; i ++) {
+          for (var j = 0; j < blockSize_h; j ++) {
             // Red
             const redIndex = ((upper_left_x + i) * 4) + ((upper_left_y + j) * rowsize) + 0;
             if (redIndex < this.bitmap.data.length) {
@@ -293,22 +307,27 @@ async function redact(message: any) {
       }
 
       // Set the pixel equal to the known average
-      image.bitmap.data[(x * 4) + (y * rowsize) + 0] = averagePixels[conv_x][conv_y][0];
-      image.bitmap.data[(x * 4) + (y * rowsize) + 1] = averagePixels[conv_x][conv_y][1];
-      image.bitmap.data[(x * 4) + (y * rowsize) + 2] = averagePixels[conv_x][conv_y][2];
-      image.bitmap.data[(x * 4) + (y * rowsize) + 3] = averagePixels[conv_x][conv_y][3];
+      image.bitmap.data[idx + 0] = averagePixels[conv_x][conv_y][0];
+      image.bitmap.data[idx + 1] = averagePixels[conv_x][conv_y][1];
+      image.bitmap.data[idx + 2] = averagePixels[conv_x][conv_y][2];
+      image.bitmap.data[idx + 3] = averagePixels[conv_x][conv_y][3];
     }
     );
     const freshly_pixelated = image.clone();
     var left_edge = await getLeftEdge(image);
 
     // Step 1) Crop image to the same size as the original and adjust brightness to be identical
-    const threshold = 0.02;
-    const percent_tried = message.text.length / message.totalLength
+    const threshold = 0.06;
+    //const percent_tried = message.text.length / message.totalLength
     //    We need to vertically crop the guess image down to the size of the answer
     //      but also keep the cropping along blocksize boundaries
-    var adjustedCenter = imageCenter - (imageCenter % blockSize) + 4;
-    image.crop(left_edge, (adjustedCenter) - (redacted_image.bitmap.height / 2), image.bitmap.width - left_edge, redacted_image.bitmap.height); // TODO NEEDED? INTENDED?
+    //var adjustedCenter = imageCenter - (imageCenter % blockSize_h);
+
+    image.crop(left_edge, 0, image.bitmap.width - left_edge, message.redacted_image !== undefined ? redacted_image.bitmap.height : image.bitmap.height);
+
+    //image.crop(left_edge, (adjustedCenter) - (redacted_image.bitmap.height / 2), image.bitmap.width - left_edge, redacted_image.bitmap.height - ((adjustedCenter) - (redacted_image.bitmap.height / 2))); // TODO NEEDED? INTENDED?
+    //console.assert(image.bitmap.width * image.bitmap.height * 4 == image.bitmap.data.length, "Image data length is not correct 3: ", offset_x, offset_y);
+
     var cropped_redacted_image = redacted_image.clone();
     const guess_image = image.clone();
 
@@ -346,20 +365,25 @@ async function redact(message: any) {
 
     // Step 3) Crop our image down to just the area that changed
     image.crop(left_boundary, 0, (image.bitmap.width - left_boundary), image.bitmap.height);
+
+    //console.assert(image.bitmap.width * image.bitmap.height * 4 == image.bitmap.data.length, "Image data length is not correct 4: ", offset_x, offset_y);
+
     if (blueMargin > cropped_redacted_image.bitmap.width) {
-      // Expand the redacted image with whitespace because it's too small
-      var blank_canvass = new Jimp(cropped_redacted_image.bitmap.width * 2, cropped_redacted_image.bitmap.height, 'white', (err: any, image: any)  => {
+      // Expand the redacted image with background color (black) because it's too small
+      var blank_canvas = new Jimp(cropped_redacted_image.bitmap.width * 2, cropped_redacted_image.bitmap.height, 'black', (err: any, image: Jimp)  => {
       if (err) throw err
       })
-      blank_canvass.composite(cropped_redacted_image, 0, 0, {
+      blank_canvas.composite(cropped_redacted_image, 0, 0, {
         mode: Jimp.BLEND_SOURCE_OVER,
         opacityDest: 1,
         opacitySource: 1
       })
-      cropped_redacted_image = blank_canvass;
+      cropped_redacted_image = blank_canvas;
     }
     // Crop the answer image down to the same size as the guess image
     cropped_redacted_image.crop(left_boundary, 0, image.bitmap.width, cropped_redacted_image.bitmap.height);
+
+    //cropped_redacted_image.write('cropped_redacted_image.png');
 
     // Step 4) Crop the right-most edge off both the guess and answer
     //  This is because there's a large error on that last block due to the next letter bleeding over.
@@ -370,22 +394,24 @@ async function redact(message: any) {
       cropped_redacted_image.crop(0, 0, adjustedBlueMargin, cropped_redacted_image.bitmap.height);
     }
 
+    //console.assert(image.bitmap.width * image.bitmap.height * 4 == image.bitmap.data.length, "Image data length is not correct 5: ", offset_x, offset_y);
+
     // Step 5) Report the similarity score for just that area
     const diff_bounded = await Jimp.diff(image, cropped_redacted_image, threshold);
 
     // Step 6) Report the similarity score for the whole image
-    //    Match up the sizes of the images so we can diff them
+    //    Match up the sizes of the images so we can diff them, (filling with background color, black)
     var scaled_guess_image = guess_image.clone();
     if (guess_image.bitmap.width < redacted_image.bitmap.width) {
-      var blank_canvass = new Jimp(redacted_image.bitmap.width, redacted_image.bitmap.height, 'white', (err: any, image: any)  => {
+      var blank_canvas = new Jimp(redacted_image.bitmap.width, redacted_image.bitmap.height, 'black', (err: any, image: Jimp)  => {
       if (err) throw err
       })
-      blank_canvass.composite(scaled_guess_image, 0, 0, {
+      blank_canvas.composite(scaled_guess_image, 0, 0, {
         mode: Jimp.BLEND_SOURCE_OVER,
         opacityDest: 1,
         opacitySource: 1
       })
-      scaled_guess_image = blank_canvass;
+      scaled_guess_image = blank_canvas;
     }
 
     const diff_final = await Jimp.diff(scaled_guess_image, redacted_image, threshold);

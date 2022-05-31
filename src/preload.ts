@@ -1,14 +1,17 @@
 // All of the Node.js APIs are available in the preload process.
 // It has the same sandbox as a Chrome extension.
-const { ipcRenderer } = require('electron');
+import { ipcRenderer } from 'electron';
 import Jimp from 'jimp';
 import * as path from "path";
 
 // Some hardcoded constants here.
-const guessable_characters = 'abcdefghijklmnopqrstuvwxyz ';
-const max_length = 20;
-const blocksize = 8;
-const threshold = 0.25;
+const guessable_characters = '0123456789';//abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const max_length = 8;
+const blockSize_w = 32;
+const blockSize_h = 29;
+const threshold = 0.4;
+const skipX = 10;
+const skipY = 5;
 
 const redact_command = "redact-text";
 const guess_command = "guess-text";
@@ -34,10 +37,10 @@ process.once('loaded', () => {
 
         // First, auto-discover some likely offsets
         var offset_scores = [];
-        for (let x = 0; x < blocksize; x++) {
-          for (let y = 0; y < blocksize; y++) {
+        for (let x = 1+skipX; x <= blockSize_w+1; x++) {
+          for (let y = 1+skipY; y < blockSize_h+1; y++) {
             var bestScore = 1;
-            for (let i = 0; i < guessable_characters.length; i++) {
+            for (let i = 6; i < 7; i++) {
               var guess_result = await makeGuess(guess_command, guessable_characters[i], "", x, y);
               if (guess_result.score < bestScore) {
                 bestScore = guess_result.score;
