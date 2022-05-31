@@ -6,8 +6,10 @@
 // needed in the renderer process.
 
 var best_guess = "";
+var iterations = 0;
+var totalTime = 0;
 var best_score = 1;
-var lastTime = new Date().getTime();
+var lastTime: number = null;
 
 window.addEventListener("message", (event) => {
   if (event.data.command === "offsetDiscovery") {
@@ -60,7 +62,12 @@ async function gatherResults(guess: string, totalScore: number, score: number, i
 
   labelElement = <HTMLInputElement>document.getElementById("attempts_per_second");
   var now = new Date().getTime();
-  labelElement.value = (1000 / (now - lastTime)).toString();
+  if (lastTime) {
+    var timeDiff = (now - lastTime);
+    iterations += 1;
+    totalTime += timeDiff;
+  }
+  labelElement.value = (totalTime !== 0 ? 1000 * iterations / totalTime : 0).toString();
   lastTime = now;
 
 }
