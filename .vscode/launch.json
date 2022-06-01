@@ -5,8 +5,8 @@
             "name": "Electron: Main",
             "type": "pwa-node",
             "request": "launch",
-            "program": "${workspaceRoot}\\dist\\main.js",
-            "runtimeExecutable": "${workspaceRoot}\\node_modules\\.bin\\electron",
+            "program": "${workspaceRoot}/dist/main.js",
+            "runtimeExecutable": "${workspaceRoot}/node_modules/.bin/electron",
             "runtimeArgs": [
                 "--remote-debugging-port=9223"
             ],
