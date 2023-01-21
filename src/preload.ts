@@ -5,13 +5,13 @@ import Jimp from 'jimp';
 import * as path from "path";
 
 // Some hardcoded constants here.
-const guessable_characters = '0123456789';//abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const guessable_characters = '0123456789ABCDEF';//GHIJKLMNOPQRSTUVWXYZ';//abcdefghijklmnopqrstuvwxyz';
 const max_length = 8;
 const blockSize_w = 18;
-const blockSize_h = 29;
-const threshold = 0.4;
-const skipX = 10;
-const skipY = 5;
+const blockSize_h = 20;
+const threshold = 0.1;
+const skipX = 24;
+const skipY = 8;
 
 const redact_command = "redact-text";
 const guess_command = "guess-text";
@@ -37,8 +37,8 @@ process.once('loaded', () => {
 
         // First, auto-discover some likely offsets
         var offset_scores = [];
-        for (let x = 1+skipX; x <= blockSize_w+1; x++) {
-          for (let y = 1+skipY; y < blockSize_h+1; y++) {
+        for (let x = 1+skipX; x <= blockSize_w+1+skipX; x++) {
+          for (let y = 1+skipY; y < blockSize_h+1+skipY; y++) {
             var bestScore = 1;
             for (let i = 6; i < 7; i++) {
               var guess_result = await makeGuess(guess_command, guessable_characters[i], "", x, y);

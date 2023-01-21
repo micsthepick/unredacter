@@ -4,10 +4,13 @@ import { ipcMain } from 'electron';
 import Jimp from 'jimp';
 
 app.commandLine.appendArgument("--disable-renderer-backgrounding​");
+app.commandLine.appendArgument("--disable-http-cache")
 
 // Hardcoded constants
 const blockSize_w = 18;
 const blockSize_h = 20;
+const gamma = 1.1;
+const threshold = 0.1;
 
 var mainWindow: BrowserWindow = null;
 var redacted_image: Jimp = null;
@@ -68,7 +71,6 @@ function createWindow() {
   mainWindow.on('close', () => {
     win.close();
   });
-}
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
@@ -203,6 +205,7 @@ async function redact(message: any) {
     tmpImage = await win.webContents.capturePage();
   }
   while (tmpImage.getSize().height === 0);
+  win.webContents.stop()
   const imageData = tmpImage ? tmpImage.toPNG() : Buffer.from('');
   if (imageData.length === 0) {
     console.error('No image data!');
@@ -321,7 +324,6 @@ async function redact(message: any) {
     var left_edge = await getLeftEdge(image);
 
     // Step 1) Crop image to the same size as the original and adjust brightness to be identical
-    const threshold = 0.06;
     //const percent_tried = message.text.length / message.totalLength
     //    We need to vertically crop the guess image down to the size of the answer
     //      but also keep the cropping along blocksize boundaries
@@ -368,7 +370,9 @@ async function redact(message: any) {
     }
 
     // Step 3) Crop our image down to just the area that changed
-    image.crop(left_boundary, 0, (image.bitmap.width - left_boundary), image.bitmap.height);
+    if (left_boundary < image.bitmap.width) {
+      image.crop(left_boundary, 0, Math.max(0, image.bitmap.width - left_boundary), image.bitmap.height);
+    }
 
     //console.assert(image.bitmap.width * image.bitmap.height * 4 == image.bitmap.data.length, "Image data length is not correct 4: ", offset_x, offset_y);
 
@@ -385,27 +389,48 @@ async function redact(message: any) {
       cropped_redacted_image = blank_canvas;
     }
     // Crop the answer image down to the same size as the guess image
-    cropped_redacted_image.crop(left_boundary, 0, image.bitmap.width, cropped_redacted_image.bitmap.height);
+    if (left_boundary < cropped_redacted_image.bitmap.width) {
+      cropped_redacted_image.crop(left_boundary, 0, image.bitmap.width, cropped_redacted_image.bitmap.height);
+    }
 
     //cropped_redacted_image.write('cropped_redacted_image.png');
 
     // Step 4) Crop the right-most edge off both the guess and answer
     //  This is because there's a large error on that last block due to the next letter bleeding over.
     // Adjust the blue margin over because we cropped a bunch since the last measurement
-    const adjustedBlueMargin = ((blueMargin-left_boundary)-left_edge)-offset_x;
+    const adjustedBlueMargin = Math.max(0, ((blueMargin-left_boundary)-left_edge)-offset_x);
     if (image.bitmap.width > adjustedBlueMargin){
       image.crop(0, 0, adjustedBlueMargin, image.bitmap.height);
       cropped_redacted_image.crop(0, 0, adjustedBlueMargin, cropped_redacted_image.bitmap.height);
     }
+
+    // adjust gamma of cropped_redacted_image for comparison
+    cropped_redacted_image.scan(0, 0, cropped_redacted_image.bitmap.width, cropped_redacted_image.bitmap.height,  function(x: number, y: number, idx: number) {
+      cropped_redacted_image.bitmap.data[idx + 0] = Math.trunc((cropped_redacted_image.bitmap.data[idx + 0]/255)**gamma*255);
+      cropped_redacted_image.bitmap.data[idx + 1] = Math.trunc((cropped_redacted_image.bitmap.data[idx + 1]/255)**gamma*255);
+      cropped_redacted_image.bitmap.data[idx + 2] = Math.trunc((cropped_redacted_image.bitmap.data[idx + 2]/255)**gamma*255);
+      cropped_redacted_image.bitmap.data[idx + 3] = Math.trunc((cropped_redacted_image.bitmap.data[idx + 3]/255)**gamma*255);
+    })
+
+    
+    // adjust gamma of image for comparison
+    image.scan(0, 0, image.bitmap.width, image.bitmap.height,  function(x: number, y: number, idx: number) {
+      image.bitmap.data[idx + 0] = Math.trunc((image.bitmap.data[idx + 0]/255)**gamma*255);
+      image.bitmap.data[idx + 1] = Math.trunc((image.bitmap.data[idx + 1]/255)**gamma*255);
+      image.bitmap.data[idx + 2] = Math.trunc((image.bitmap.data[idx + 2]/255)**gamma*255);
+      image.bitmap.data[idx + 3] = Math.trunc((image.bitmap.data[idx + 3]/255)**gamma*255);
+    })
 
     //console.assert(image.bitmap.width * image.bitmap.height * 4 == image.bitmap.data.length, "Image data length is not correct 5: ", offset_x, offset_y);
 
     // Step 5) Report the similarity score for just that area
     const diff_bounded = await Jimp.diff(image, cropped_redacted_image, threshold);
 
+
     // Step 6) Report the similarity score for the whole image
     //    Match up the sizes of the images so we can diff them, (filling with background color, black)
     var scaled_guess_image = guess_image.clone();
+
     if (guess_image.bitmap.width < redacted_image.bitmap.width) {
       var blank_canvas = new Jimp(redacted_image.bitmap.width, redacted_image.bitmap.height, 'black', (err: any, image: Jimp)  => {
       if (err) throw err
@@ -418,7 +443,24 @@ async function redact(message: any) {
       scaled_guess_image = blank_canvas;
     }
 
+    // adjust scaled_guess_image gamma for comparison
+    scaled_guess_image.scan(0, 0, scaled_guess_image.bitmap.width, scaled_guess_image.bitmap.height,  function(x: number, y: number, idx: number) {
+      scaled_guess_image.bitmap.data[idx + 0] = Math.trunc((scaled_guess_image.bitmap.data[idx + 0]/255)**gamma*255);
+      scaled_guess_image.bitmap.data[idx + 1] = Math.trunc((scaled_guess_image.bitmap.data[idx + 1]/255)**gamma*255);
+      scaled_guess_image.bitmap.data[idx + 2] = Math.trunc((scaled_guess_image.bitmap.data[idx + 2]/255)**gamma*255);
+      scaled_guess_image.bitmap.data[idx + 3] = Math.trunc((scaled_guess_image.bitmap.data[idx + 3]/255)**gamma*255);
+    })
+
+    // adjust redacted_image gamma for comparison
+    redacted_image.scan(0, 0, redacted_image.bitmap.width, redacted_image.bitmap.height,  function(x: number, y: number, idx: number) {
+      redacted_image.bitmap.data[idx + 0] = Math.trunc((redacted_image.bitmap.data[idx + 0]/255)**gamma*255);
+      redacted_image.bitmap.data[idx + 1] = Math.trunc((redacted_image.bitmap.data[idx + 1]/255)**gamma*255);
+      redacted_image.bitmap.data[idx + 2] = Math.trunc((redacted_image.bitmap.data[idx + 2]/255)**gamma*255);
+      redacted_image.bitmap.data[idx + 3] = Math.trunc((redacted_image.bitmap.data[idx + 3]/255)**gamma*255);
+    })
+
     const diff_final = await Jimp.diff(scaled_guess_image, redacted_image, threshold);
+    //const dataURI = await diff_final.image.getBase64Async(Jimp.MIME_PNG);
     const dataURI = await guess_image.getBase64Async(Jimp.MIME_PNG);
     result = {
               command: message.command,
